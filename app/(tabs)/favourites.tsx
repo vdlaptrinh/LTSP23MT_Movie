@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useFavourites } from "../../contexts/FavouritesContext";
@@ -7,9 +7,17 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function FavouritesScreen() {
   const { colors } = useTheme();
-  const { favourites, toggleFavourite } = useFavourites();
+  const { favourites, toggleFavourite, isLoading } = useFavourites();
   const { isLoggedIn } = useAuth();
   const router = useRouter();
+
+  if (isLoading) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (!isLoggedIn) {
     return (
@@ -50,7 +58,13 @@ export default function FavouritesScreen() {
   const renderItem = ({ item }: { item: (typeof favourites)[0] }) => (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-      onPress={() => router.push(`/movie/${item.imdbID || item.id}`)}
+      onPress={() => {
+        const id = item.imdbID || item.id.toString();
+        router.push({
+          pathname: `/movie/${id}`,
+          params: { movie: JSON.stringify(item) },
+        });
+      }}
       activeOpacity={0.7}
     >
       <Image source={{ uri: item.poster }} style={styles.poster} />

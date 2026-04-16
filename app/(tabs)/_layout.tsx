@@ -48,7 +48,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="film-outline" size={size} color={color} />
           ),
-          headerTitle: "Popular Movies",
+          headerTitle: "Best Movies of All Time",
         }}
       />
       <Tabs.Screen

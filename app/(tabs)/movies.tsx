@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,9 +15,17 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useFavourites } from "../../contexts/FavouritesContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
-import { Movie } from "../../data/movies";
-import movies from "../../data/movies";
-import { searchMovies } from "../../data/tmdb";
+import { Movie, getTrendingMovies, fallbackMovies } from "../../data/movies";
+import { searchMovies as searchTMDBMovies } from "../../data/tmdb";
+
+function searchLocalMovies(query: string, movies: Movie[]): Movie[] {
+  const lowerQuery = query.toLowerCase().trim();
+  return movies.filter((movie) =>
+    movie.title.toLowerCase().includes(lowerQuery) ||
+    movie.director.toLowerCase().includes(lowerQuery) ||
+    movie.genre.some((g) => g.toLowerCase().includes(lowerQuery))
+  );
+}
 
 export default function MovieListScreen() {
   const { colors } = useTheme();
@@ -26,24 +34,46 @@ export default function MovieListScreen() {
   const router = useRouter();
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Movie[]>(movies);
-  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<Movie[]>([]);
+  const [allMovies, setAllMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  useEffect(() => {
+    const loadTrending = async () => {
+      setInitialLoading(true);
+      const trending = await getTrendingMovies();
+      const movies = trending.length > 0 ? trending : fallbackMovies;
+      setAllMovies(movies);
+      setResults(movies);
+      setInitialLoading(false);
+      setLoading(false);
+    };
+    loadTrending();
+  }, []);
 
   const handleSearch = useCallback(async (text: string) => {
     setQuery(text);
     if (!text.trim()) {
-      setResults(movies);
+      setResults(allMovies);
       return;
     }
     setLoading(true);
+    
     try {
-      const data = await searchMovies(text);
-      setResults(data.length > 0 ? data : []);
+      const tmdbResults = await searchTMDBMovies(text);
+      if (tmdbResults.length > 0) {
+        setResults(tmdbResults);
+      } else {
+        const localResults = searchLocalMovies(text, allMovies);
+        setResults(localResults);
+      }
     } catch {
-      setResults([]);
+      const localResults = searchLocalMovies(text, allMovies);
+      setResults(localResults);
     }
     setLoading(false);
-  }, []);
+  }, [allMovies]);
 
   const handleFavourite = (item: Movie) => {
     if (!isLoggedIn) {
@@ -58,7 +88,10 @@ export default function MovieListScreen() {
 
   const goToDetail = (item: Movie) => {
     const id = item.imdbID || item.id.toString();
-    router.push(`/movie/${id}`);
+    router.push({
+      pathname: `/movie/${id}`,
+      params: { movie: JSON.stringify(item) },
+    });
   };
 
   const renderItem = ({ item }: { item: Movie }) => (
@@ -77,7 +110,7 @@ export default function MovieListScreen() {
           <View style={styles.row}>
             <Ionicons name="star" size={14} color="#FFD700" />
             <Text style={[styles.rating, { color: colors.textSecondary }]}>
-              {item.rating}
+              {item.rating.toFixed(1)}
             </Text>
           </View>
         )}
@@ -101,6 +134,28 @@ export default function MovieListScreen() {
       </TouchableOpacity>
     </TouchableOpacity>
   );
+
+  if (initialLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="search" size={20} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search movies..."
+            placeholderTextColor={colors.textSecondary}
+            value={query}
+            onChangeText={handleSearch}
+            returnKeyType="search"
+          />
+        </View>
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -135,7 +190,7 @@ export default function MovieListScreen() {
       ) : (
         <FlatList
           data={results}
-          keyExtractor={(item) => (item.imdbID || item.id).toString()}
+          keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}

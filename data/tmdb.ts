@@ -1,79 +1,155 @@
+import { TMDB_API_KEY, TMDB_API_URL, TMDB_IMAGE_URL } from "../config";
 import { Movie } from "./movies";
-import { API_KEY, API_URL } from "../config";
 
-interface OMDBSearchResult {
-  Title: string;
-  Year: string;
-  imdbID: string;
-  Poster: string;
-  Type: string;
+const TMDB_GENRE_MAP: { [key: number]: string } = {
+  28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+  80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
+  14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
+  9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 10770: "TV Movie",
+  53: "Thriller", 10752: "War", 37: "Western",
+};
+
+interface TMDBTrendingResult {
+  id: number;
+  title: string;
+  overview: string;
+  poster_path: string | null;
+  vote_average: number;
+  release_date: string;
+  genre_ids: number[];
 }
 
-interface OMDBDetail {
-  Title: string;
-  Year: string;
-  Rated: string;
-  Released: string;
-  Runtime: string;
-  Genre: string;
-  Director: string;
-  Actors: string;
-  Plot: string;
-  imdbRating: string;
-  Poster: string;
-  imdbID: string;
-  Response: string;
+interface TMDBMovieDetail {
+  id: number;
+  title: string;
+  overview: string;
+  poster_path: string | null;
+  vote_average: number;
+  release_date: string;
+  runtime: number;
+  genres: { id: number; name: string }[];
+  credits: { crew: { job: string; name: string }[] };
+  imdb_id: string;
 }
 
-function mapSearchResult(item: OMDBSearchResult): Movie {
+interface TMDBExternalIds {
+  imdb_id: string;
+}
+
+function mapTMDBTrending(item: TMDBTrendingResult): Movie {
   return {
-    id: parseInt(item.imdbID.replace(/\D/g, ""), 10) || Math.random() * 100000 | 0,
-    title: item.Title,
-    overview: "",
-    poster: item.Poster !== "N/A" ? item.Poster : "",
-    rating: 0,
-    year: parseInt(item.Year, 10) || 0,
-    genre: [],
+    id: item.id,
+    title: item.title,
+    overview: item.overview || "",
+    poster: item.poster_path ? `${TMDB_IMAGE_URL}${item.poster_path}` : "",
+    rating: item.vote_average / 2,
+    year: parseInt(item.release_date?.split("-")[0] || "0", 10),
+    genre: item.genre_ids.slice(0, 3).map((id) => TMDB_GENRE_MAP[id] || "Other"),
     duration: "",
     director: "",
-    imdbID: item.imdbID,
   };
 }
 
-function mapDetail(item: OMDBDetail): Movie {
-  return {
-    id: parseInt(item.imdbID.replace(/\D/g, ""), 10) || Math.random() * 100000 | 0,
-    title: item.Title,
-    overview: item.Plot !== "N/A" ? item.Plot : "",
-    poster: item.Poster !== "N/A" ? item.Poster : "",
-    rating: parseFloat(item.imdbRating) || 0,
-    year: parseInt(item.Year, 10) || 0,
-    genre: item.Genre !== "N/A" ? item.Genre.split(", ").map((g) => g.trim()) : [],
-    duration: item.Runtime !== "N/A" ? item.Runtime : "N/A",
-    director: item.Director !== "N/A" ? item.Director : "",
-    imdbID: item.imdbID,
-  };
+export async function getTrendingMovies(): Promise<Movie[]> {
+  if (!TMDB_API_KEY || TMDB_API_KEY === "a5c8b9c7e8f1234567890abcdef12345") {
+    return [];
+  }
+  
+  try {
+    const url = `${TMDB_API_URL}/trending/movie/week?api_key=${TMDB_API_KEY}&language=en-US&page=1`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.results && Array.isArray(data.results)) {
+      return data.results.slice(0, 10).map(mapTMDBTrending);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getTMDBMovieDetail(movieId: number): Promise<Movie | null> {
+  if (!TMDB_API_KEY || TMDB_API_KEY === "a5c8b9c7e8f1234567890abcdef12345") {
+    return null;
+  }
+  
+  try {
+    const [detailRes, creditsRes] = await Promise.all([
+      fetch(`${TMDB_API_URL}/movie/${movieId}?api_key=${TMDB_API_KEY}&language=en-US`),
+      fetch(`${TMDB_API_URL}/movie/${movieId}/credits?api_key=${TMDB_API_KEY}&language=en-US`),
+    ]);
+    
+    const detail: TMDBMovieDetail = await detailRes.json();
+    const credits = await creditsRes.json();
+    
+    if (detail.id) {
+      const director = credits.crew?.find((c) => c.job === "Director")?.name || "";
+      return {
+        id: detail.id,
+        title: detail.title,
+        overview: detail.overview,
+        poster: detail.poster_path ? `${TMDB_IMAGE_URL}${detail.poster_path}` : "",
+        rating: detail.vote_average / 2,
+        year: parseInt(detail.release_date?.split("-")[0] || "0", 10),
+        genre: detail.genres?.map((g) => g.name) || [],
+        duration: detail.runtime ? `${detail.runtime} min` : "N/A",
+        director: director,
+        imdbID: detail.imdb_id,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function searchMovies(query: string): Promise<Movie[]> {
+  if (!TMDB_API_KEY || TMDB_API_KEY === "a5c8b9c7e8f1234567890abcdef12345") {
+    return [];
+  }
+  
   if (!query.trim()) return [];
-  const url = `${API_URL}/?apikey=${API_KEY}&s=${encodeURIComponent(query)}&type=movie`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data.Response === "False") return [];
-  const results = (data.Search || []).map(mapSearchResult);
-  const seen = new Set<string>();
-  return results.filter((m: Movie) => {
-    if (seen.has(m.imdbID || "")) return false;
-    seen.add(m.imdbID || "");
-    return true;
-  });
+  
+  try {
+    const url = `${TMDB_API_URL}/search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(query)}&page=1&include_adult=false`;
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (data.results && Array.isArray(data.results)) {
+      return data.results.slice(0, 10).map((item: TMDBTrendingResult) => ({
+        id: item.id,
+        title: item.title,
+        overview: item.overview || "",
+        poster: item.poster_path ? `${TMDB_IMAGE_URL}${item.poster_path}` : "",
+        rating: item.vote_average / 2,
+        year: parseInt(item.release_date?.split("-")[0] || "0", 10),
+        genre: item.genre_ids.slice(0, 3).map((id) => TMDB_GENRE_MAP[id] || "Other"),
+        duration: "",
+        director: "",
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export async function getMovieDetail(imdbID: string): Promise<Movie | null> {
-  const url = `${API_URL}/?apikey=${API_KEY}&i=${encodeURIComponent(imdbID)}&plot=full`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data.Response === "False") return null;
-  return mapDetail(data);
+  if (!TMDB_API_KEY || TMDB_API_KEY === "a5c8b9c7e8f1234567890abcdef12345") {
+    return null;
+  }
+  
+  try {
+    const searchUrl = `${TMDB_API_URL}/search/movie?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(imdbID)}`;
+    const searchRes = await fetch(searchUrl);
+    const searchData = await searchRes.json();
+    
+    if (searchData.results && searchData.results.length > 0) {
+      const movieId = searchData.results[0].id;
+      return await getTMDBMovieDetail(movieId);
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

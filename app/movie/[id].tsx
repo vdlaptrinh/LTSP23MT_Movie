@@ -15,11 +15,10 @@ import { useFavourites } from "../../contexts/FavouritesContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { Movie } from "../../data/movies";
-import movies from "../../data/movies";
-import { getMovieDetail } from "../../data/tmdb";
+import { getTMDBMovieDetail, getMovieDetail } from "../../data/tmdb";
 
 export default function MovieDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, movie: movieParam } = useLocalSearchParams<{ id: string; movie?: string }>();
   const { colors } = useTheme();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isLoggedIn } = useAuth();
@@ -30,26 +29,43 @@ export default function MovieDetailScreen() {
 
   useEffect(() => {
     (async () => {
+      if (movieParam) {
+        try {
+          const passedMovie = JSON.parse(movieParam) as Movie;
+          setMovie(passedMovie);
+          setLoading(false);
+          return;
+        } catch {
+          // continue to fetch from API
+        }
+      }
+
       const idStr = id || "";
       const isImdb = idStr.startsWith("tt");
-
-      const localFallback = isImdb
-        ? movies.find((m) => m.imdbID === idStr) || null
-        : movies.find((m) => m.id.toString() === idStr) || null;
 
       if (isImdb) {
         try {
           const apiMovie = await getMovieDetail(idStr);
-          setMovie(apiMovie || localFallback);
+          setMovie(apiMovie);
         } catch {
-          setMovie(localFallback);
+          setMovie(null);
         }
       } else {
-        setMovie(localFallback);
+        const numericId = parseInt(idStr, 10);
+        if (!isNaN(numericId)) {
+          try {
+            const apiMovie = await getTMDBMovieDetail(numericId);
+            setMovie(apiMovie);
+          } catch {
+            setMovie(null);
+          }
+        } else {
+          setMovie(null);
+        }
       }
       setLoading(false);
     })();
-  }, [id]);
+  }, [id, movieParam]);
 
   const handleFavourite = (m: Movie) => {
     if (!isLoggedIn) {
@@ -100,7 +116,7 @@ export default function MovieDetailScreen() {
           {movie.rating > 0 && (
             <View style={styles.metaItem}>
               <Ionicons name="star" size={16} color="#FFD700" />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{movie.rating}</Text>
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>{movie.rating.toFixed(1)}</Text>
             </View>
           )}
           {movie.year > 0 && (

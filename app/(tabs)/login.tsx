@@ -100,6 +100,12 @@ export default function LoginScreen() {
             Use demo credentials
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.demoBtn} onPress={() => { setEmail("demo2@movie.com"); setPassword("demo2"); }}>
+          <Text style={[styles.demoText, { color: colors.primary }]}>
+            Use demo2: demo2@movie.com/demo2
+          </Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
